@@ -183,12 +183,16 @@ def _pixel_data(image):
     Returns:
         :obj: `tuple` (pixels, width, height, bpp)
     """
-    # Test for PIL.Image and numpy.ndarray without requiring that cv2 or PIL
-    # are installed.
-    if 'PIL.' in str(type(image)):
+    # Test for PIL.Image, numpy.ndarray, and imageio.core.util without
+    # requiring that cv2, PIL, or imageio are installed.
+
+    image_type = str(type(image))
+    if 'PIL.' in image_type:
         pixels = image.tobytes()
         width, height = image.size
-    elif 'numpy.ndarray' in str(type(image)):
+    elif 'numpy.ndarray' in image_type or 'imageio.core.util' in image_type:
+        # Different versions of imageio use a subclass of numpy.ndarray
+        # called either imageio.core.util.Image or imageio.core.util.Array.
         if 'uint8' != str(image.dtype):
             image = image.astype('uint8')
         try:
@@ -309,7 +313,8 @@ def _encoder():
         dmtxEncodeDestroy(byref(encoder))
 
 
-def encode(data, scheme=None, size=None):
+def encode(data, scheme=None, size=None,
+           marginSize=None, moduleSize=None, fnc1=None):
     """
     Encodes `data` in a DataMatrix image.
 
@@ -319,8 +324,16 @@ def encode(data, scheme=None, size=None):
         data: bytes instance
         scheme: encoding scheme - one of `ENCODING_SCHEME_NAMES`, or `None`.
             If `None`, defaults to 'Ascii'.
-        size: image dimensions - one of `ENCODING_SIZE_NAMES`, or `None`.
+        size: requested image dimensions - one of `ENCODING_SIZE_NAMES`, or `None`.
             If `None`, defaults to 'ShapeAuto'.
+        marginSize: int (in pixels) or `None`.
+            If `None`, uses libdmtx default (10 px).
+            Margin is applied to each edge of the data matrix
+        moduleSize: int (in pixels) or `None`.
+            If `None`, uses libdmtx default (5 px).
+        fnc1: int
+            Character to represent FNC1 (Function Code 1) or `None`.
+            If `None`, uses libdmtx default (DmtxUndefined).
 
     Returns:
         Encoded: with properties `(width, height, bpp, pixels)`.
@@ -355,6 +368,13 @@ def encode(data, scheme=None, size=None):
     with _encoder() as encoder:
         dmtxEncodeSetProp(encoder, DmtxProperty.DmtxPropScheme, scheme)
         dmtxEncodeSetProp(encoder, DmtxProperty.DmtxPropSizeRequest, size)
+        if marginSize:
+            dmtxEncodeSetProp(encoder, DmtxProperty.DmtxPropMarginSize, marginSize)
+        if moduleSize:
+            dmtxEncodeSetProp(encoder, DmtxProperty.DmtxPropModuleSize, moduleSize)
+        if fnc1:
+            dmtxEncodeSetProp(encoder, DmtxProperty.DmtxPropFnc1, fnc1)
+        
 
         if dmtxEncodeDataMatrix(encoder, len(data), cast(data, c_ubyte_p)) == 0:
             raise PyLibDMTXError(
